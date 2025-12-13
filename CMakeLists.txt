@@ -106,32 +106,14 @@ set(QWINDOWKIT_DESCRIPTION ${PROJECT_DESCRIPTION})
 # ----------------------------------
 # Find basic dependencies
 # ----------------------------------
-find_package(qmsetup QUIET)
-
-if(NOT TARGET qmsetup::library)
-    # Modify this variable according to your project structure
-    set(_source_dir ${CMAKE_CURRENT_SOURCE_DIR}/qmsetup)
-
-    # Import install function
-    include("${_source_dir}/cmake/modules/private/InstallPackage.cmake")
-
-    # Install package in place
-    set(_package_path)
-    qm_install_package(qmsetup
-        SOURCE_DIR ${_source_dir}
-        BUILD_TYPE Release
-        RESULT_PATH _package_path
-    )
-
-    # Find package again
-    find_package(qmsetup REQUIRED PATHS ${_package_path})
-
-    # Update import path
-    set(qmsetup_DIR ${_package_path} CACHE PATH "" FORCE)
+if(NOT DEFINED QWINDOWKIT_BUILD_DIR)
+    set(QWINDOWKIT_BUILD_DIR "${CMAKE_BINARY_DIR}/out-$<LOWER_CASE:${CMAKE_SYSTEM_PROCESSOR}>-$<CONFIG>")
 endif()
 
-qm_import(Filesystem)
-qm_init_directories()
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${QWINDOWKIT_BUILD_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${QWINDOWKIT_BUILD_DIR}/lib)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${QWINDOWKIT_BUILD_DIR}/lib)
+set(CMAKE_BUILD_SHARE_DIR ${QWINDOWKIT_BUILD_DIR}/share)
 
 # ----------------------------------
 # Add source modules
