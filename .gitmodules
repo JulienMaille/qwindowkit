@@ -1,4 +1,0 @@
-[submodule "qmsetup"]
-	path = qmsetup
-	url = ../qmsetup.git
-	branch = main

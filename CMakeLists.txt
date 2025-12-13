@@ -36,7 +36,7 @@ option(QWINDOWKIT_BUILD_STATIC "Build static libraries" OFF)
 option(QWINDOWKIT_BUILD_WIDGETS "Build widgets module" ON)
 option(QWINDOWKIT_BUILD_QUICK "Build quick module" OFF)
 option(QWINDOWKIT_BUILD_EXAMPLES "Build examples" OFF)
-option(QWINDOWKIT_BUILD_DOCUMENTATIONS "Build documentations" OFF)
+# option(QWINDOWKIT_BUILD_DOCUMENTATIONS "Build documentations" OFF) # Documentation build removed
 option(QWINDOWKIT_INSTALL "Install library" ON)
 
 option(QWINDOWKIT_ENABLE_QT_WINDOW_CONTEXT "Enable Qt Window Context anyway" OFF)
@@ -46,12 +46,6 @@ option(QWINDOWKIT_ENABLE_STYLE_AGENT "Enable building style agent" ON)
 #[[
 
 Detailed Introcuction to Configure Options:
-
-`QWINDOWKIT_BUILD_DOCUMENTATIONS`
-  - If you have installed `Doxygen`, you can ENABLE this option so that the documentations
-    will also be built and installed.
-  - If not, you can read the comments in `qdoc` style in `cpp` files to get detailed usages
-    of the public APIs.
 
 `QWINDOWKIT_ENABLE_WINDOWS_SYSTEM_BORDERS`
   - If you don't want the system borders on Windows 10/11, you can DISABLE this option.
@@ -105,32 +99,20 @@ set(QWINDOWKIT_DESCRIPTION ${PROJECT_DESCRIPTION})
 # ----------------------------------
 # Find basic dependencies
 # ----------------------------------
-find_package(qmsetup QUIET)
+# qmsetup dependency removed
 
-if(NOT TARGET qmsetup::library)
-    # Modify this variable according to your project structure
-    set(_source_dir ${CMAKE_CURRENT_SOURCE_DIR}/qmsetup)
-
-    # Import install function
-    include("${_source_dir}/cmake/modules/private/InstallPackage.cmake")
-
-    # Install package in place
-    set(_package_path)
-    qm_install_package(qmsetup
-        SOURCE_DIR ${_source_dir}
-        BUILD_TYPE Release
-        RESULT_PATH _package_path
-    )
-
-    # Find package again
-    find_package(qmsetup REQUIRED PATHS ${_package_path})
-
-    # Update import path
-    set(qmsetup_DIR ${_package_path} CACHE PATH "" FORCE)
+# Set up output directories (replacement for qm_init_directories)
+if(NOT DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 endif()
 
-qm_import(Filesystem)
-qm_init_directories()
+if(NOT DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY)
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+endif()
+
+if(NOT DEFINED CMAKE_ARCHIVE_OUTPUT_DIRECTORY)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+endif()
 
 # ----------------------------------
 # Add source modules

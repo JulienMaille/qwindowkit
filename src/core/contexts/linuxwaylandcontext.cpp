@@ -33,6 +33,7 @@ namespace QWK {
 
     void LinuxWaylandContext::virtual_hook(int id, void *data) {
         if (id == ShowSystemMenuHook) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
             auto *waylandApp = qApp->nativeInterface<QNativeInterface::QWaylandApplication>();
             if (!waylandApp) {
                 return;
@@ -58,6 +59,7 @@ namespace QWK {
                 Q_ASSERT(api.isValid());
                 api.wl_display_flush(d);
             }
+#endif
         } else {
             QtWindowContext::virtual_hook(id, data);
         }
