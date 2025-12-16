@@ -56,6 +56,10 @@ namespace QWK {
 #if QWINDOWKIT_CONFIG(FORCE_QT_WINDOW_CONTEXT)
         return new QtWindowContext();
 #else
+        if (qEnvironmentVariableIntValue("QWINDOWKIT_USE_CROSS_PLATFORM_QT_IMPLEMENTATION")) {
+            qCDebug(qWindowKitLog) << "Using pure Qt implementation.";
+            return new QtWindowContext();
+        }
 #  if defined(Q_OS_WINDOWS)
         return new Win32WindowContext();
 #  elif defined(Q_OS_MAC)
