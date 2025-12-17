@@ -5,13 +5,185 @@
 #include "qtwindowcontext_p.h"
 
 #include <QtCore/QDebug>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#  include <QtGui/private/qguiapplication_p.h>
+#endif
+#include <QtGui/qpa/qplatformwindow.h>
 
 #include "qwkglobal_p.h"
 #include "systemwindow_p.h"
 
+#ifdef Q_OS_WINDOWS
+#  include "shared/qwkwindowsextra_p.h"
+#  include <windows.h>
+#  include <windowsx.h>
+#endif
+
 namespace QWK {
 
     static constexpr const quint8 kDefaultResizeBorderThickness = 8;
+
+#ifdef Q_OS_WINDOWS
+    static bool showSystemMenu_sys(HWND hWnd, const POINT &pos, const bool selectFirstEntry,
+                                   const bool fixedSize) {
+        HMENU hMenu = ::GetSystemMenu(hWnd, FALSE);
+        if (!hMenu) {
+            return true;
+        }
+
+        const auto windowStyles = ::GetWindowLongPtrW(hWnd, GWL_STYLE);
+        const bool allowMaximize = windowStyles & WS_MAXIMIZEBOX;
+        const bool allowMinimize = windowStyles & WS_MINIMIZEBOX;
+
+        // IsMaximized/IsFullScreen helpers needed?
+        // Basic check for max/full
+        const bool max = ::IsZoomed(hWnd);
+        // Full screen check omitted for brevity, usually max check is enough for basic menu
+
+        ::EnableMenuItem(hMenu, SC_CLOSE, (MF_BYCOMMAND | MFS_ENABLED));
+        ::EnableMenuItem(
+            hMenu, SC_MAXIMIZE,
+            (MF_BYCOMMAND |
+             ((max || fixedSize || !allowMaximize) ? MFS_DISABLED : MFS_ENABLED)));
+        ::EnableMenuItem(
+            hMenu, SC_RESTORE,
+            (MF_BYCOMMAND |
+             ((max && !fixedSize && allowMaximize) ? MFS_ENABLED : MFS_DISABLED)));
+        ::HiliteMenuItem(hWnd, hMenu, SC_RESTORE,
+                         (MF_BYCOMMAND | (selectFirstEntry ? MFS_HILITE : MFS_UNHILITE)));
+        ::EnableMenuItem(hMenu, SC_MINIMIZE,
+                         (MF_BYCOMMAND | (allowMinimize ? MFS_ENABLED : MFS_DISABLED)));
+        ::EnableMenuItem(hMenu, SC_SIZE,
+                         (MF_BYCOMMAND | ((max || fixedSize) ? MFS_DISABLED : MFS_ENABLED)));
+        ::EnableMenuItem(hMenu, SC_MOVE, (MF_BYCOMMAND | (max ? MFS_DISABLED : MFS_ENABLED)));
+
+        UINT defaultItemId = UINT_MAX;
+        // Simple check for Win11 not strictly required, generic behavior is fine
+        if (max) {
+            defaultItemId = SC_RESTORE;
+        } else {
+            defaultItemId = SC_MAXIMIZE;
+        }
+        if (defaultItemId == UINT_MAX) {
+            defaultItemId = SC_CLOSE;
+        }
+        ::SetMenuDefaultItem(hMenu, defaultItemId, FALSE);
+
+        const auto result = ::TrackPopupMenu(
+            hMenu,
+            (TPM_RETURNCMD | (QGuiApplication::isRightToLeft() ? TPM_RIGHTALIGN : TPM_LEFTALIGN) |
+             TPM_RIGHTBUTTON),
+            pos.x, pos.y, 0, hWnd, nullptr);
+
+        ::HiliteMenuItem(hWnd, hMenu, SC_RESTORE, (MF_BYCOMMAND | MFS_UNHILITE));
+
+        if (!result) {
+            return false;
+        }
+
+        ::PostMessageW(hWnd, WM_SYSCOMMAND, result, 0);
+        return true;
+    }
+
+    struct Win32QtContextData {
+        WNDPROC originalWindowProc = nullptr;
+        QtWindowContext *context = nullptr;
+    };
+
+    static QHash<HWND, Win32QtContextData> g_qtContextHash;
+
+    static LRESULT CALLBACK SystemMenuHookWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        if (!g_qtContextHash.contains(hWnd)) {
+            return ::DefWindowProcW(hWnd, uMsg, wParam, lParam);
+        }
+        const auto &data = g_qtContextHash[hWnd];
+
+        bool shouldShowSystemMenu = false;
+        bool broughtByKeyboard = false;
+        POINT nativeGlobalPos = {};
+
+        switch (uMsg) {
+            case WM_RBUTTONUP: {
+                POINT nativeLocalPos = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+                QPoint qtScenePos = QHighDpi::fromNativeLocalPosition(point2qpoint(nativeLocalPos),
+                                                                      data.context->window());
+                if (data.context->isInTitleBarDraggableArea(qtScenePos)) {
+                    POINT pos = nativeLocalPos;
+                    ::ClientToScreen(hWnd, &pos);
+                    shouldShowSystemMenu = true;
+                    nativeGlobalPos = pos;
+                }
+                break;
+            }
+            case WM_NCRBUTTONUP: {
+                if (wParam == HTCAPTION) {
+                    shouldShowSystemMenu = true;
+                    nativeGlobalPos = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+                }
+                break;
+            }
+            case WM_SYSCOMMAND: {
+                const WPARAM filteredWParam = (wParam & 0xFFF0);
+                if ((filteredWParam == SC_KEYMENU) && (lParam == VK_SPACE)) {
+                    shouldShowSystemMenu = true;
+                    broughtByKeyboard = true;
+                    // Get position from window
+                    RECT windowPos = {};
+                    ::GetWindowRect(hWnd, &windowPos);
+                    // Simple offset
+                    nativeGlobalPos = {windowPos.left, windowPos.top + 30}; // Fallback
+                }
+                break;
+            }
+            case WM_KEYDOWN:
+            case WM_SYSKEYDOWN: {
+                const bool altPressed = ((wParam == VK_MENU) || (::GetKeyState(VK_MENU) < 0));
+                const bool spacePressed = ((wParam == VK_SPACE) || (::GetKeyState(VK_SPACE) < 0));
+                if (altPressed && spacePressed) {
+                    shouldShowSystemMenu = true;
+                    broughtByKeyboard = true;
+                    RECT windowPos = {};
+                    ::GetWindowRect(hWnd, &windowPos);
+                    nativeGlobalPos = {windowPos.left, windowPos.top + 30};
+                }
+                break;
+            }
+        }
+
+        if (shouldShowSystemMenu) {
+            showSystemMenu_sys(hWnd, nativeGlobalPos, broughtByKeyboard, data.context->isHostSizeFixed());
+            return 0;
+        }
+
+        if (data.originalWindowProc) {
+            return ::CallWindowProcW(data.originalWindowProc, hWnd, uMsg, wParam, lParam);
+        }
+        return ::DefWindowProcW(hWnd, uMsg, wParam, lParam);
+    }
+
+    static void installSystemMenuHook(HWND hwnd, QtWindowContext *ctx) {
+        if (g_qtContextHash.contains(hwnd)) return;
+
+        Win32QtContextData data;
+        data.context = ctx;
+        data.originalWindowProc = reinterpret_cast<WNDPROC>(::GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
+
+        if (data.originalWindowProc) {
+            ::SetWindowLongPtrW(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(SystemMenuHookWindowProc));
+            g_qtContextHash.insert(hwnd, data);
+        }
+    }
+
+    static void uninstallSystemMenuHook(HWND hwnd) {
+        if (!g_qtContextHash.contains(hwnd)) return;
+
+        const auto &data = g_qtContextHash[hwnd];
+        if (data.originalWindowProc) {
+            ::SetWindowLongPtrW(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(data.originalWindowProc));
+        }
+        g_qtContextHash.remove(hwnd);
+    }
+#endif
 
     static Qt::CursorShape calculateCursorShape(const QWindow *window, const QPoint &pos) {
 #ifdef Q_OS_MACOS
@@ -247,26 +419,49 @@ namespace QWK {
         qtWindowEventFilter = std::make_unique<QtWindowEventFilter>(this);
     }
 
-    QtWindowContext::~QtWindowContext() = default;
+    QtWindowContext::~QtWindowContext() {
+#ifdef Q_OS_WINDOWS
+        if (m_windowId) {
+            uninstallSystemMenuHook(reinterpret_cast<HWND>(m_windowId));
+        }
+#endif
+    }
 
     QString QtWindowContext::key() const {
         return QStringLiteral("qt");
     }
 
     void QtWindowContext::virtual_hook(int id, void *data) {
+#ifdef Q_OS_WINDOWS
+        if (id == ShowSystemMenuHook && m_windowId) {
+            const auto &pos = *static_cast<const QPoint *>(data);
+            const auto hwnd = reinterpret_cast<HWND>(m_windowId);
+            const QPoint nativeGlobalPos = QHighDpi::toNativeGlobalPosition(pos, m_windowHandle.data());
+            showSystemMenu_sys(hwnd, qpoint2point(nativeGlobalPos), false, isHostSizeFixed());
+            return;
+        }
+#endif
         AbstractWindowContext::virtual_hook(id, data);
     }
 
     void QtWindowContext::winIdChanged(WId winId, WId oldWinId) {
-        if (!m_windowHandle) {
-            m_delegate->setWindowFlags(m_host, m_delegate->getWindowFlags(m_host) &
+        if (m_windowHandle) {
+            // Allocate new resources
+            m_delegate->setWindowFlags(m_host,
+                                   m_delegate->getWindowFlags(m_host) | Qt::FramelessWindowHint);
+        } else {
+             m_delegate->setWindowFlags(m_host, m_delegate->getWindowFlags(m_host) &
                                                    ~Qt::FramelessWindowHint);
-            return;
         }
 
-        // Allocate new resources
-        m_delegate->setWindowFlags(m_host,
-                                   m_delegate->getWindowFlags(m_host) | Qt::FramelessWindowHint);
+#ifdef Q_OS_WINDOWS
+        if (oldWinId) {
+            uninstallSystemMenuHook(reinterpret_cast<HWND>(oldWinId));
+        }
+        if (winId) {
+            installSystemMenuHook(reinterpret_cast<HWND>(winId), this);
+        }
+#endif
     }
 
 }
