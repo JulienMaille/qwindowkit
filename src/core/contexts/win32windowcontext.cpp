@@ -78,6 +78,9 @@ namespace QWK {
 #endif
 
         isSystemBorderEnabled() {
+        if (qEnvironmentVariableIntValue("QWINDOWKIT_USE_CROSS_PLATFORM_QT_IMPLEMENTATION")) {
+            return false;
+        }
         return
 #if QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
             isWin10OrGreater()
