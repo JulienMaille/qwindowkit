@@ -53,6 +53,10 @@ namespace QWK {
         if (windowContextFactoryMethod) {
             return windowContextFactoryMethod();
         }
+
+        if (qEnvironmentVariableIntValue("QWINDOWKIT_USE_CROSS_PLATFORM_QT_IMPLEMENTATION")) {
+            return new QtWindowContext();
+        }
 #if QWINDOWKIT_CONFIG(FORCE_QT_WINDOW_CONTEXT)
         return new QtWindowContext();
 #else
