@@ -210,6 +210,10 @@ namespace QWK {
             DYNAMIC_API_DECLARE(AdjustWindowRectExForDpi);
             DYNAMIC_API_DECLARE(GetDpiForMonitor);
 
+#if (WINVER >= _WIN32_WINNT_WIN8)
+            DYNAMIC_API_DECLARE(GetPointerInfo);
+#endif
+
 #undef DYNAMIC_API_DECLARE
 
             SetWindowCompositionAttributePtr pSetWindowCompositionAttribute = nullptr;
@@ -232,6 +236,10 @@ namespace QWK {
 
                 QSystemLibrary shcore(QStringLiteral("shcore"));
                 DYNAMIC_API_RESOLVE(shcore, GetDpiForMonitor);
+
+#if (WINVER >= _WIN32_WINNT_WIN8)
+                DYNAMIC_API_RESOLVE(user32, GetPointerInfo);
+#endif
 
                 QSystemLibrary dwmapi(QStringLiteral("dwmapi"));
                 DYNAMIC_API_RESOLVE(dwmapi, DwmFlush);
