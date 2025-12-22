@@ -1207,6 +1207,18 @@ namespace QWK {
                 const auto xButtonMask = GET_XBUTTON_WPARAM(wParam);
                 return MAKEWPARAM(keyState, xButtonMask);
             }
+#if (WINVER >= _WIN32_WINNT_WIN8)
+            if ((myMsg >= WM_NCPOINTERUPDATE) && (myMsg <= WM_NCPOINTERUP)) {
+                const auto pointerId = GET_POINTERID_WPARAM(wParam);
+                POINTER_INFO pi = {};
+                if (const auto pGetPointerInfo = DynamicApis::instance().pGetPointerInfo) {
+                    if (pGetPointerInfo(pointerId, &pi)) {
+                        return MAKEWPARAM(pointerId, pi.pointerFlags);
+                    }
+                }
+                return wParam;
+            }
+#endif
             return keyState;
         }();
         const auto lParamNew = [myMsg, lParam, hWnd]() -> LPARAM {
@@ -1265,11 +1277,14 @@ namespace QWK {
             case WM_NCXBUTTONDBLCLK:
                 SEND_MESSAGE(hWnd, WM_XBUTTONDBLCLK, wParamNew, lParamNew);
                 break;
-#if 0 // ### TODO: How to handle touch events?
-        case WM_NCPOINTERUPDATE:
-        case WM_NCPOINTERDOWN:
-        case WM_NCPOINTERUP:
-            break;
+#if (WINVER >= _WIN32_WINNT_WIN8)
+            case WM_NCPOINTERUPDATE:
+            case WM_NCPOINTERDOWN:
+            case WM_NCPOINTERUP:
+                // WM_POINTER* messages use screen coordinates (same as WM_NCPOINTER*).
+                // So we pass the original lParam.
+                SEND_MESSAGE(hWnd, myMsg + 4, wParamNew, lParam);
+                break;
 #endif
             case WM_NCMOUSEHOVER:
                 SEND_MESSAGE(hWnd, WM_MOUSEHOVER, wParamNew, lParamNew);
@@ -1353,10 +1368,10 @@ namespace QWK {
             case WM_NCXBUTTONDOWN:
             case WM_NCXBUTTONUP:
             case WM_NCXBUTTONDBLCLK:
-#if 0 // ### TODO: How to handle touch events?
-    case WM_NCPOINTERUPDATE:
-    case WM_NCPOINTERDOWN:
-    case WM_NCPOINTERUP:
+#if (WINVER >= _WIN32_WINNT_WIN8)
+            case WM_NCPOINTERUPDATE:
+            case WM_NCPOINTERDOWN:
+            case WM_NCPOINTERUP:
 #endif
             case WM_NCMOUSEHOVER: {
                 if (message == WM_NCMOUSEMOVE) {
