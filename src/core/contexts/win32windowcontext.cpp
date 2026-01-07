@@ -1421,13 +1421,8 @@ namespace QWK {
 
                 if (lastHitTestResult == WindowPart::ChromeButton) {
                     if (message == WM_NCMOUSEMOVE) {
-                        // ### FIXME FIXME FIXME
-                        // ### FIXME: Calling DefWindowProc() here is really dangerous, investigate
-                        // how to avoid doing this.
-                        // ### FIXME FIXME FIXME
-                        *result = ::DefWindowProcW(hWnd, WM_NCMOUSEMOVE, wParam, lParam);
                         emulateClientAreaMessage(hWnd, message, wParam, lParam);
-                        return true;
+                        return false;
                     }
 
                     if (lastHitTestResultRaw == HTSYSMENU) {
