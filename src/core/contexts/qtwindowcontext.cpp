@@ -6,6 +6,13 @@
 
 #include <QtCore/QDebug>
 
+#ifdef Q_OS_WINDOWS
+#  include <QWKCore/qwindowkit_windows.h>
+#  include <windowsx.h>
+#  include <commctrl.h>
+#endif
+
+
 #include "qwkglobal_p.h"
 #include "systemwindow_p.h"
 
@@ -259,7 +266,47 @@ namespace QWK {
         qtWindowEventFilter = std::make_unique<QtWindowEventFilter>(this);
     }
 
-    QtWindowContext::~QtWindowContext() = default;
+
+#ifdef Q_OS_WINDOWS
+    static LRESULT CALLBACK SystemMenuHookWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+        auto *context = reinterpret_cast<QtWindowContext *>(dwRefData);
+        if (!context) {
+            return ::DefSubclassProc(hWnd, message, wParam, lParam);
+        }
+
+        bool shouldShowSystemMenu = false;
+        if (message == WM_SYSCOMMAND) {
+            const WPARAM sysCommand = wParam & 0xFFF0;
+            if (sysCommand == SC_MOUSEMENU || sysCommand == SC_KEYMENU) {
+                shouldShowSystemMenu = true;
+            }
+        } else if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
+            const bool altPressed = ((wParam == VK_MENU) || (::GetKeyState(VK_MENU) < 0));
+            const bool spacePressed = ((wParam == VK_SPACE) || (::GetKeyState(VK_SPACE) < 0));
+            if (altPressed && spacePressed) {
+                shouldShowSystemMenu = true;
+            }
+        }
+
+        if (shouldShowSystemMenu) {
+            POINT cursorPos;
+            ::GetCursorPos(&cursorPos);
+            context->showSystemMenu(QPoint(cursorPos.x, cursorPos.y));
+            return 0;
+        }
+
+        return ::DefSubclassProc(hWnd, message, wParam, lParam);
+    }
+#endif
+
+    QtWindowContext::~QtWindowContext() {
+#ifdef Q_OS_WINDOWS
+        if (m_windowHandle) {
+            auto hWnd = reinterpret_cast<HWND>(m_windowHandle->winId());
+            ::RemoveWindowSubclass(hWnd, SystemMenuHookWindowProc, 1);
+        }
+#endif
+    }
 
     QString QtWindowContext::key() const {
         return QStringLiteral("qt");
@@ -270,6 +317,13 @@ namespace QWK {
     }
 
     void QtWindowContext::winIdChanged(WId winId, WId oldWinId) {
+#ifdef Q_OS_WINDOWS
+        if (oldWinId) {
+            auto hWnd = reinterpret_cast<HWND>(oldWinId);
+            ::RemoveWindowSubclass(hWnd, SystemMenuHookWindowProc, 1);
+        }
+#endif
+
         if (!m_windowHandle) {
             m_delegate->setWindowFlags(m_host, m_delegate->getWindowFlags(m_host) &
                                                    ~Qt::FramelessWindowHint);
@@ -279,6 +333,13 @@ namespace QWK {
         // Allocate new resources
         m_delegate->setWindowFlags(m_host,
                                    m_delegate->getWindowFlags(m_host) | Qt::FramelessWindowHint);
+
+#ifdef Q_OS_WINDOWS
+        if (winId) {
+            auto hWnd = reinterpret_cast<HWND>(winId);
+            ::SetWindowSubclass(hWnd, SystemMenuHookWindowProc, 1, reinterpret_cast<DWORD_PTR>(this));
+        }
+#endif
     }
 
 }

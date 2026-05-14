@@ -1482,11 +1482,19 @@ namespace QWK {
 
                 if (lastHitTestResult == WindowPart::ChromeButton) {
                     if (message == WM_NCMOUSEMOVE) {
-                        // ### FIXME FIXME FIXME
-                        // ### FIXME: Calling DefWindowProc() here is really dangerous, investigate
-                        // how to avoid doing this.
-                        // ### FIXME FIXME FIXME
-                        *result = ::DefWindowProcW(hWnd, WM_NCMOUSEMOVE, wParam, lParam);
+                        // We must call DefWindowProcW here because Windows 11 Snap Layout requires
+                        // DefWindowProcW to handle WM_NCMOUSEMOVE on HTMAXBUTTON for the layout menu
+                        // to appear when hovering. However, doing so might cause recursive event
+                        // handling loops since Qt also intercepts these events.
+                        // To avoid recursion, we temporarily disable our own handling using a thread_local flag.
+                        static thread_local bool insideDefWindowProc = false;
+                        if (!insideDefWindowProc) {
+                            insideDefWindowProc = true;
+                            *result = ::DefWindowProcW(hWnd, WM_NCMOUSEMOVE, wParam, lParam);
+                            insideDefWindowProc = false;
+                        } else {
+                            *result = 0;
+                        }
                         emulateClientAreaMessage(hWnd, message, wParam, lParam);
                         return true;
                     }
